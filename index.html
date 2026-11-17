@@ -163,6 +163,13 @@ canvas#worldmap{width:100%;aspect-ratio:2/1;max-width:100%;border-radius:10px;ba
 #bigmap .mapz{position:absolute;top:22px;right:22px;display:flex;gap:6px}
 #bigmap .mapz button{font:600 13px/1 "IBM Plex Mono",monospace;padding:8px 11px;border-radius:8px;border:1px solid rgba(255,255,255,.25);background:rgba(8,12,18,.72);color:#fff;cursor:pointer}
 #bigmap .mapz button.on{background:#ffb547;color:#111;border-color:#ffb547}
+#tut{position:absolute;left:16px;bottom:calc(16px + env(safe-area-inset-bottom,0px));width:min(340px,calc(100% - 32px));border-radius:12px;padding:12px 14px;pointer-events:auto;display:flex;flex-direction:column;gap:8px;border-left:3px solid var(--amber)}
+#tut .tt{display:flex;align-items:center;gap:10px;font-family:var(--f-display);font-size:13px;letter-spacing:.16em;text-transform:uppercase;color:var(--amber)}
+#tut .tt span{margin-left:auto;color:var(--muted);letter-spacing:.04em;font-family:var(--f-mono);font-size:11px;text-transform:none}
+#tut .tt button{background:none;border:0;color:var(--muted);font-size:12px;text-decoration:underline;cursor:pointer;padding:0}
+#tut .tb{font-size:15px;line-height:1.5}
+#tut .tp{height:3px;background:#1a2433;border-radius:2px;overflow:hidden}
+#tut .tp i{display:block;height:100%;background:var(--amber);transition:width .4s}
 #touch{position:absolute;inset:0;pointer-events:none}
 #touch .stick{position:absolute;left:24px;bottom:calc(24px + env(safe-area-inset-bottom,0px));width:150px;height:150px;border-radius:50%;border:2px solid rgba(255,255,255,.25);background:rgba(0,0,0,.2);pointer-events:auto;touch-action:none}
 #touch .stick i{position:absolute;left:50%;top:50%;width:56px;height:56px;margin:-28px;border-radius:50%;background:rgba(255,181,71,.6)}
@@ -199,7 +206,7 @@ canvas#worldmap{width:100%;aspect-ratio:2/1;max-width:100%;border-radius:10px;ba
 <div id="loading">
   <div class="brand">Aero<b>Horizon</b><small>Flight Simulator 2026</small></div>
   <div id="loadbar"><i></i></div>
-  <div id="loadtxt">Preparando el motor gráfico…</div>
+  <div id="loadtxt">&nbsp;</div>
 </div>
 
 <div id="menu" class="hide">
@@ -298,7 +305,7 @@ const QUALITY = {
   alta:  { pr: 1.5,  shadow: 2048, bloom: true,  rings: [1, 2, 4], res: [128, 64, 28], trees: 24000, treeD: 1, bldD: 1, sat: 2048,  city: 1,   clouds: 1, vol: { steps: 60, scale: .5 }, detail: true, ao: .85, rays: 1 },
   ultra: { pr: 2,    shadow: 4096, bloom: true,  rings: [1, 3, 5], res: [176, 80, 32], trees: 45000, treeD: 2, bldD: 1, sat: 4096, city: 1.3, clouds: 1.3, vol: { steps: 90, scale: .6 }, detail: true, ao: 1, rays: 1.15 },
 };
-const DEFAULTS = { quality: 'alta', invertPitch: false, sens: 1, mouseYoke: false, stab: true, autoRudder: true, crash: true, fuelSim: true, units: 'aero', vol: 0.8, callouts: true, panel: true, aircraft: 'c172', airport: 'LEMD' };
+const DEFAULTS = { lang: 'en', tutorial: true, showFps: true, quality: 'alta', invertPitch: false, sens: 1, mouseYoke: false, stab: true, autoRudder: true, crash: true, fuelSim: true, units: 'aero', vol: 0.8, callouts: true, panel: true, aircraft: 'c172', airport: 'LEMD' };
 const S = (() => { try { return Object.assign({}, DEFAULTS, JSON.parse(localStorage.getItem('ah26.settings') || '{}')); } catch (e) { return Object.assign({}, DEFAULTS); } })();
 function saveSettings() { try { localStorage.setItem('ah26.settings', JSON.stringify(S)); } catch (e) {} }
 function loadJSON(k, d) { try { return JSON.parse(localStorage.getItem(k)) ?? d; } catch (e) { return d; } }
@@ -488,6 +495,322 @@ function disposeObj(o) {
   });
   o.parent && o.parent.remove(o);
 }
+/* =========================================================================
+   i18n: the sources are written in Spanish. English (the default) is applied at the DOM boundary through a phrase
+   table (src/01_i18n_en.js): every innerHTML / textContent / attribute write and the static markup go through trText().
+   Settings → Language stores S.lang and reloads. '#i18n' in the URL turns on the harvest mode (window.__i18nSeen).
+   ========================================================================= */
+const LANG = S.lang === 'es' ? 'es' : 'en';
+const I18N_HARVEST = /[#&]i18n/.test(location.hash);
+const I18N = Object.create(null), I18N_RX = [];       // filled by 01_i18n_en.js
+const I18N_REV = Object.create(null);                 // English → Spanish for the few static strings of head.html
+window.__i18nSeen = new Set();
+const _trCache = new Map(), _hasWord = /[A-Za-zÀ-ÿ]{2}/;
+function trText(s) {
+  if (typeof s !== 'string') return s;
+  if (s.length < 2) { const e1 = LANG !== 'es' ? I18N[s] : undefined; return e1 !== undefined ? e1 : s; }   // one-letter words ("o" → "or")
+  const hit = _trCache.get(s); if (hit !== undefined) return hit;
+  const r = _trText(s);
+  if (s.length < 200) { if (_trCache.size > 6000) _trCache.clear(); _trCache.set(s, r); }
+  return r;
+}
+function _trText(s) {
+  if (!_hasWord.test(s)) return s;
+  const tab = LANG === 'es' ? I18N_REV : I18N;
+  let e = tab[s]; if (e !== undefined) return e;
+  const m = /^(\s*)([\s\S]*?)(\s*)$/.exec(s);
+  if (m[2] !== s) { e = tab[m[2]]; if (e !== undefined) return m[1] + e + m[3]; }
+  if (LANG !== 'es') for (const [rx, rep] of I18N_RX) { if (rx.test(s)) return s.replace(rx, rep); if (m[2] !== s && rx.test(m[2])) return m[1] + m[2].replace(rx, rep) + m[3]; }
+  if (I18N_HARVEST) window.__i18nSeen.add(s);
+  return s;
+}
+function trHTML(h) {
+  if (typeof h !== 'string' || h.length < 3) return h;
+  const w = (LANG === 'es' ? I18N_REV : I18N)[h]; if (w !== undefined) return w;
+  return h.replace(/(^|>)([^<>]+)(?=<|$)/g, (m, a, t) => a + trText(t)).replace(/\b(title|aria-label|placeholder|alt)="([^"]*)"/g, (m, k, v) => k + '="' + trText(v) + '"');
+}
+const tr = trText;
+function trWalk(root) {
+  const tw = document.createTreeWalker(root, NodeFilter.SHOW_TEXT); let n;
+  while ((n = tw.nextNode())) { const p = n.parentNode && n.parentNode.nodeName; if (p === 'SCRIPT' || p === 'STYLE') continue; const t = trText(n.data); if (t !== n.data) n.data = t; }
+  root.querySelectorAll('[title],[aria-label],[placeholder]').forEach(el => ['title', 'aria-label', 'placeholder'].forEach(k => { const v = el.getAttribute(k); if (v) { const t = trText(v); if (t !== v) el.setAttribute(k, t); } }));
+}
+{
+  const hook = (proto, name, f) => { const d = Object.getOwnPropertyDescriptor(proto, name); if (d && d.set) Object.defineProperty(proto, name, Object.assign({}, d, { set(v) { d.set.call(this, f(v)); } })); };
+  const str = f => v => typeof v === 'string' ? f(v) : v;
+  if (LANG !== 'es' || I18N_HARVEST) {
+    hook(Element.prototype, 'innerHTML', trHTML);
+    hook(Node.prototype, 'textContent', str(trText));
+    hook(HTMLElement.prototype, 'innerText', str(trText));
+    hook(CharacterData.prototype, 'data', str(trText));
+    hook(HTMLElement.prototype, 'title', str(trText));
+    hook(HTMLInputElement.prototype, 'placeholder', str(trText));
+    const iah = Element.prototype.insertAdjacentHTML; Element.prototype.insertAdjacentHTML = function (p, h) { return iah.call(this, p, trHTML(h)); };
+    const sa = Element.prototype.setAttribute; Element.prototype.setAttribute = function (k, v) { return sa.call(this, k, (k === 'title' || k === 'aria-label' || k === 'placeholder') && typeof v === 'string' ? trText(v) : v); };
+    const ctn = Document.prototype.createTextNode; Document.prototype.createTextNode = function (s) { return ctn.call(this, trText(String(s))); };
+  }
+}
+// called once the phrase table is loaded (end of 01_i18n_en.js): drops the cache and translates the static markup
+function i18nReady() {
+  _trCache.clear();
+  const go = () => { trWalk(document.body); document.title = trText(document.title); document.documentElement.lang = LANG; };
+  if (document.readyState === 'loading') window.addEventListener('DOMContentLoaded', go); else go();
+}
+// English phrase table (Spanish source text → English). Exact phrases first, then regex rules for text with numbers.
+Object.assign(I18N, {
+  // ---- menu, rail, footer ----
+  "Vuelo libre": "Free flight", "Desafíos": "Challenges", "Descubrimiento": "Discovery", "Hangar": "Hangar", "Aeropuertos": "Airports", "Libro de vuelo": "Logbook", "Ajustes": "Settings", "Controles": "Controls",
+  "Simulador original. Relieve real de todo el planeta (AWS Terrain Tiles: SRTM, EU-DEM, ETOPO1) y pistas de OurAirports. Imágenes de satélite Landsat WELD y Blue Marble de los servicios": "Original simulator. Real terrain of the whole planet (AWS Terrain Tiles: SRTM, EU-DEM, ETOPO1) and runways from OurAirports. Landsat WELD and Blue Marble satellite imagery from NASA's",
+  "de la NASA (ESDIS, USGS). Calles, barrios, edificios altos y aeropuertos de Madrid, Barcelona, Valencia y Ciudad Real: © colaboradores de": "services (ESDIS, USGS). Streets, districts, tall buildings and airports of Madrid, Barcelona, Valencia and Ciudad Real: © contributors to",
+  "PAUSA": "PAUSED", "Local": "Local", "Región": "Region", "País": "Country", "Continente": "Continent", "Mundo": "World",
+  "Clic en el mapa para teletransportarte (mantienes altitud y rumbo). Rueda o botones para el zoom.": "Click the map to teleport (you keep altitude and heading). Wheel or buttons to zoom.", "o": "or", "para cerrar.": "to close.",
+  "Preparando el motor gráfico…": "Preparing the graphics engine…", "Generando nubes volumétricas…": "Generating volumetric clouds…", "Cargando…": "Loading…", "Levantando la ciudad…": "Building the city…", "Cargando el mapa de la ciudad…": "Loading the city map…",
+  "No se pudo iniciar el simulador: ": "The simulator could not start: ", ". Este juego necesita WebGL 2.": ". This game needs WebGL 2.",
+  // ---- free flight screen ----
+  "Elige aeropuerto, avión y condiciones. Despega desde la cabecera, empieza en aproximación final o directamente en vuelo.": "Pick an airport, an aircraft and the conditions. Take off from the runway, start on final approach or begin directly in the air.",
+  "Buscar OACI, ciudad o país…": "Search ICAO, city or country…", "Avión": "Aircraft", "Condiciones": "Conditions", "Inicio": "Start", "Hora local": "Local time", "Viento desde": "Wind from", "Hora del día": "Time of day",
+  "En la cabecera de pista": "On the runway threshold", "Aproximación final (5 NM)": "Final approach (5 NM)", "En vuelo (3 000 ft)": "In flight (3,000 ft)", "En el agua (hidroavión)": "On the water (seaplane)", "Portaaviones: aproximación (3 NM)": "Aircraft carrier: approach (3 NM)", "Portaaviones: aproximación (3 NM) ·": "Aircraft carrier: approach (3 NM) ·",
+  "Sin resultados.": "No results.", "Volar": "Fly", "Volar aquí": "Fly here", "Volar con este avión": "Fly this aircraft", "Todos": "All", "Todas": "All", "Pista": "Runway", "Destino": "Destination", "Sin destino (vuelo libre por España)": "No destination (free flight over Spain)", "SIN DESTINO": "NO DESTINATION", "SIN DESTINO: pulsa D→": "NO DESTINATION: press D→",
+  "Destino · mundo abierto": "Destination · open world", "Rango del navegador": "Navigator range",
+  // ---- weather / time ----
+  "Despejado": "Clear", "Pocas nubes": "Few clouds", "Nubes dispersas": "Scattered clouds", "Cubierto": "Overcast", "Muy nuboso": "Mostly cloudy", "Lluvia": "Rain", "Tormenta": "Storm", "Niebla": "Fog", "Nieve": "Snow",
+  "Amanecer": "Dawn", "Mediodía": "Noon", "Atardecer": "Sunset", "Noche": "Night", "Meteorología": "Weather", "Velocidad del viento": "Wind speed",
+  // ---- aircraft categories and specs ----
+  "Avioneta": "Light aircraft", "Clásico": "Classic", "Acrobático": "Aerobatic", "Hidroavión": "Seaplane", "Turbohélice": "Turboprop", "Bimotor": "Twin-engine", "Reactor ejecutivo": "Business jet", "Reactor": "Jet", "Pistón": "Piston", "Comercial": "Airliner", "Militar": "Military", "Planeador": "Glider", "Fuselaje ancho": "Widebody", "Supersónico": "Supersonic",
+  "Motor": "Engine", "Motorización": "Powerplant", "Potencia": "Power", "Crucero": "Cruise", "Velocidad crucero": "Cruise speed", "Máxima": "Maximum", "Velocidad máxima": "Maximum speed", "Envergadura": "Wingspan", "Longitud": "Length", "Anchura": "Width", "Peso típico": "Typical weight", "Techo": "Ceiling", "Alt. máx.": "Max alt.", "Vr / Vref": "Vr / Vref", "Triciclo, retráctil": "Tricycle, retractable", "Patín de cola": "Tail skid", ", retráctil": ", retractable", "Tren": "Landing gear",
+  "Hangar:": "Hangar:", "Selecciona uno para verlo en la plataforma.": "Select one to see it on the apron.",
+  // ---- aircraft descriptions ----
+  "El entrenador por excelencia. Lento, noble y perfecto para aprender a aterrizar.": "The training aircraft par excellence. Slow, gentle and perfect for learning to land.",
+  "La avioneta más fabricada de la historia. Ala alta, tren fijo y cabina con aviónica de cristal.": "The most-built light aircraft in history. High wing, fixed gear and a glass-avionics cockpit.",
+  "Clásico de 1938 con patín de cola. Vuela despacio, ideal para paisajes y pistas de tierra.": "1938 classic with a tail skid. Flies slowly, ideal for scenery and dirt strips.",
+  "Anfibio biplaza de casco en V con motor Rotax propulsor y flotadores en las puntas: despega del agua y de la pista. En el agua, tren arriba; en pista, tren abajo.": "Two-seat amphibian with a V hull, a pusher Rotax engine and wingtip floats: it takes off from water and from runways. On water, gear up; on a runway, gear down.",
+  "Monomotor de composite con paracaídas balístico. Rápido, moderno y cómodo.": "Composite single with a ballistic parachute. Fast, modern and comfortable.",
+  "Monomotor de tren retráctil con 75 años de historia. Elegante y veloz.": "Retractable-gear single with 75 years of history. Elegant and quick.",
+  "Bimotor diésel de composite con cola en T y alas finas de planeador.": "Composite diesel twin with a T-tail and thin glider-like wings.",
+  "Bimotor de pistón robusto y rápido, clásico de la aviación ejecutiva ligera.": "Sturdy, fast piston twin, a classic of light business aviation.",
+  "Acrobático de competición: 360°/s de alabeo. Pulsa K para el humo.": "Competition aerobatic plane: 360°/s roll rate. Press K for smoke.",
+  "Biplano acrobático legendario: compacto, nervioso y precioso.": "Legendary aerobatic biplane: compact, twitchy and beautiful.",
+  "Caza de la Segunda Guerra Mundial con motor Merlin V12. Mucho par: usa timón al despegar.": "World War II fighter with a Merlin V12. Lots of torque: use rudder on take-off.",
+  "El avión que revolucionó el transporte aéreo en 1936. Patín de cola y motores radiales.": "The aircraft that revolutionised air transport in 1936. Tail skid and radial engines.",
+  "Avioneta de monte canadiense: despega en nada y lo carga todo.": "Canadian bush plane: it takes off in no distance and carries everything.",
+  "Turbohélice suizo STOL: aterriza en 130 m en la nieve o en una ladera.": "Swiss STOL turboprop: lands in 130 m on snow or on a hillside.",
+  "Turbohélice utilitario para 12 pasajeros, rey de las pistas cortas.": "Utility turboprop for 12 passengers, king of short runways.",
+  "El monomotor turbohélice más rápido: 330 nudos a 28 000 pies.": "The fastest single-engine turboprop: 330 knots at 28,000 ft.",
+  "Biturbohélice ejecutivo de cola en T, versátil y fiable.": "T-tail executive twin turboprop, versatile and reliable.",
+  "Biturbohélice STOL de ala alta: el avión que opera Lukla.": "High-wing STOL twin turboprop: the aircraft that serves Lukla.",
+  "Turbohélice regional para 70 pasajeros con hélices de seis palas.": "Regional turboprop for 70 passengers with six-blade propellers.",
+  "Reactor ligero de un solo piloto: sube a 45 000 pies en minutos.": "Light single-pilot jet: climbs to 45,000 ft in minutes.",
+  "Jet ejecutivo transcontinental de cabina amplia.": "Transcontinental business jet with a roomy cabin.",
+  "El monopasillo más vendido de Airbus, con motores de nueva generación.": "Airbus's best-selling single-aisle, with new-generation engines.",
+  "La versión más moderna del avión comercial más popular de la historia.": "The latest version of the most popular airliner in history.",
+  "El supersónico de pasajeros: Mach 2,04 a 60 000 pies con poscombustión para despegar. Morro abatible (5° en rodaje, 12,5° al aterrizar) y visera que sube en crucero; cabina de tres tripulantes.": "The supersonic airliner: Mach 2.04 at 60,000 ft with afterburners for take-off. Droop nose (5° taxiing, 12.5° landing) and a visor that rises in cruise; three-crew cockpit.",
+  "Dreamliner de fibra de carbono con motores GEnx de toberas dentadas. Cabina de vuelo con pantallas grandes en vivo.": "Carbon-fibre Dreamliner with GEnx engines and chevron nozzles. Flight deck with large live displays.",
+  "Bimotor de largo alcance con alas de gran envergadura.": "Long-range twin with large-span wings.",
+  "La Reina de los Cielos en su versión Intercontinental: cuatro GEnx-2B, 18 ruedas y cubierta de vuelo completa con pantallas en vivo, cuernos y palancas de gases que se mueven.": "The Queen of the Skies in its Intercontinental version: four GEnx-2B engines, 18 wheels and a full flight deck with live displays, moving yokes and throttle levers.",
+  "El avión de pasajeros más grande del mundo: dos cubiertas completas.": "The largest passenger aircraft in the world: two full decks.",
+  "Transporte militar con cuatro turbohélices de 11 000 CV y hélices contrarrotativas.": "Military transport with four 11,000 hp turboprops and contra-rotating propellers.",
+  "Caza embarcado con poscombustión: empuje de sobra para subir en vertical.": "Carrier-based fighter with afterburners: plenty of thrust to climb vertically.",
+  "Caza de superioridad aérea bimotor: empuje mayor que su peso con poscombustión, cabina con HUD y pantalla grande en vivo, gancho de emergencia (J) y cúpula que se abre al aparcar.": "Twin-engine air-superiority fighter: thrust greater than its weight with afterburners, cockpit with HUD and a large live display, emergency hook (J) and a canopy that opens when parked.",
+  "Caza furtivo de quinta generación con supercrucero y toberas vectoriales (se mueven con el cabeceo). Cabina detallada con pantallas e HUD en vivo.": "Fifth-generation stealth fighter with supercruise and vectoring nozzles (they move with pitch). Detailed cockpit with live displays and HUD.",
+  "Caza europeo de ala en delta con canards (C.16 del Ejército del Aire): canards, flaperones y timón móviles, llamas de poscombustión, cúpula que se abre al aparcar y cabina con tres pantallas e HUD en vivo.": "European delta-wing fighter with canards (Spanish Air Force C.16): moving canards, flaperons and rudder, afterburner flames, a canopy that opens when parked and a cockpit with three displays and a live HUD.",
+  "Avión de reconocimiento estratégico: Mach 3,2 a 80 000 pies, el reactor tripulado más rápido de la historia. Poscombustión con R a fondo y paracaídas de frenado con B en tierra.": "Strategic reconnaissance aircraft: Mach 3.2 at 80,000 ft, the fastest crewed jet in history. Afterburner with R fully forward and a brake parachute with B on the ground.",
+  "Bombardero furtivo de ala volante: 52 m de envergadura sin fuselaje ni cola, cuatro F118 enterrados en el ala y alcance intercontinental.": "Flying-wing stealth bomber: 52 m span with no fuselage or tail, four F118 engines buried in the wing and intercontinental range.",
+  "Planeador de 15 m con motor retráctil para despegar solo: planeo 1:42. Busca térmicas (bajo los cúmulos, sobre el terreno soleado) y ladera con viento para ganar altura.": "15 m glider with a retractable engine to take off on its own: glide ratio 1:42. Look for thermals (under cumulus clouds, over sunny ground) and wind-facing slopes to gain height.",
+  // ---- challenges and discovery ----
+  "Desafíos de aterrizaje": "Landing challenges", "Aproximaciones famosas por su dificultad. Se puntúa la velocidad vertical, el eje de pista, la zona de toma y la velocidad.": "Approaches famous for their difficulty. Scored on vertical speed, centreline, touchdown zone and airspeed.",
+  "Vuelos de descubrimiento": "Discovery flights", "Empieza en el aire en lugares espectaculares, con la luz y el tiempo elegidos para la ocasión.": "Start in the air at spectacular places, with the light and weather chosen for the occasion.",
+  "Lukla: la pista del Everest": "Lukla: the Everest runway", "527 m cuesta arriba a 2 800 m de altitud. No hay motor y al aire: solo hay un intento.": "527 m uphill at 2,800 m altitude. No go-around: you only get one attempt.",
+  "Courchevel en los Alpes": "Courchevel in the Alps", "Pista de 537 m con una pendiente brutal. Toma de contacto suave y potencia para subir.": "537 m runway with a brutal slope. Touch down softly and add power to climb.",
+  "La pista comercial más corta del mundo, entre acantilados y el mar Caribe.": "The shortest commercial runway in the world, between cliffs and the Caribbean Sea.",
+  "Playa de Maho": "Maho Beach", "Pasa a pocos metros de los bañistas con la Reina de los Cielos.": "Pass a few metres above the sunbathers in the Queen of the Skies.",
+  "Gibraltar con viento cruzado": "Gibraltar in a crosswind", "Levante racheado junto al Peñón. Corrige la deriva hasta el último segundo.": "Gusty easterly beside the Rock. Correct the drift until the last second.",
+  "Madeira entre montañas": "Madeira among the mountains", "Viento del norte que baja de las montañas sobre una pista construida sobre pilares.": "Northerly wind coming off the mountains onto a runway built on pillars.",
+  "Valle de Innsbruck": "Innsbruck valley", "Aproximación entre cumbres de 2 300 m. Mantén el centro del valle.": "Approach between 2,300 m peaks. Stay in the middle of the valley.",
+  "Queenstown al atardecer": "Queenstown at sunset", "Montañas de The Remarkables y una pista corta para un A320.": "The Remarkables mountains and a short runway for an A320.",
+  "Santos Dumont, Río": "Santos Dumont, Rio", "Pista corta en plena bahía con el Pan de Azúcar al lado.": "Short runway right on the bay with Sugarloaf next to it.",
+  "Aspen en invierno": "Aspen in winter", "Valle estrecho, nieve y una pista a 2 400 m de altitud.": "Narrow valley, snow and a runway at 2,400 m altitude.",
+  "Hong Kong de noche": "Hong Kong at night", "Luces de aproximación y rascacielos en el horizonte.": "Approach lights and skyscrapers on the horizon.",
+  "Heathrow con niebla": "Heathrow in fog", "Visibilidad de 450 m: confía en el ILS y en el piloto automático (APR).": "450 m visibility: trust the ILS and the autopilot (APR).",
+  "JFK bajo la lluvia": "JFK in the rain", "Lluvia nocturna con turbulencia moderada en Nueva York.": "Night rain with moderate turbulence over New York.",
+  "San Sebastián entre montes": "San Sebastián among the hills", "Pista de 1 750 m entre el monte Jaizkibel, la frontera francesa y el mar Cantábrico.": "1,750 m runway between Mount Jaizkibel, the French border and the Bay of Biscay.",
+  "Tenerife Norte con niebla": "Tenerife North in fog", "A 630 m de altitud y metido en las nubes bajas de La Laguna. Usa el ILS.": "At 630 m altitude and inside the low clouds of La Laguna. Use the ILS.",
+  "Barajas al anochecer": "Barajas at dusk", "Aproximación sobre la sierra de Madrid con las luces de la ciudad encendiéndose.": "Approach over the Madrid mountains with the city lights coming on.",
+  "Primer aterrizaje": "First landing", "Aterriza la Cessna en Cuatro Vientos con tiempo perfecto. Ideal para empezar.": "Land the Cessna at Cuatro Vientos in perfect weather. Ideal to get started.",
+  "Apontaje al atardecer": "Carrier landing at sunset", "F-15 en final al portaaviones frente a Barcelona: gancho abajo, senda de 3,5° y toma firme sobre los cables.": "F-15 on final to the carrier off Barcelona: hook down, 3.5° glidepath and a firm touchdown on the wires.",
+  "Catapulta en el Golfo de Cádiz": "Catapult in the Gulf of Cádiz", "Eurofighter enganchado a la catapulta: potencia máxima, suelta el freno y de 0 a 180 nudos en 90 metros.": "Eurofighter on the catapult: full power, release the brake and go from 0 to 180 knots in 90 metres.",
+  "Hidroavión en Mallorca": "Seaplane in Mallorca", "El Sea Ray a flote junto a Palma: sube al redán, despega del agua y vuelve a amerizar en calma.": "The Sea Ray afloat next to Palma: get up on the step, take off from the water and land on the water again in the calm.",
+  "Concorde a Mach 2": "Concorde at Mach 2", "A 52 000 pies y el doble de la velocidad del sonido: visera arriba y la Meseta curvándose en el horizonte.": "At 52,000 ft and twice the speed of sound: visor up and the Meseta curving on the horizon.",
+  "Lightning II en la sierra": "Lightning II over the mountains", "F-35A al atardecer rumbo al Guadarrama: toca la pantalla panorámica para mandar el piloto automático, el tren o las luces.": "F-35A at sunset heading for the Guadarrama: touch the panoramic screen to command the autopilot, the gear or the lights.",
+  "Mach 3 sobre España": "Mach 3 over Spain", "El SR-71 a 77 000 pies: cielo casi negro y la curvatura de la Tierra sobre la Meseta.": "The SR-71 at 77,000 ft: an almost black sky and the curvature of the Earth over the Meseta.",
+  "El ala volante": "The flying wing", "El B-2 Spirit al atardecer sobre la Meseta: 52 m de ala sin fuselaje ni cola.": "The B-2 Spirit at sunset over the Meseta: 52 m of wing with no fuselage or tail.",
+  "Térmicas en la Sierra": "Thermals in the Sierra", "Planeador a 1500 m bajo los cúmulos junto a Guadarrama: busca las térmicas (el variómetro pita al subir) y la ladera con viento.": "Glider at 1,500 m under the cumulus clouds near Guadarrama: look for thermals (the variometer beeps when you climb) and the wind-facing slope.",
+  "Amerizaje de emergencia": "Emergency ditching", "A320 sin motores sobre la bahía de Palma tras un impacto con aves: tren arriba, flaps abajo, alas niveladas y a tocar el agua lo más despacio posible, como en el Hudson.": "A320 with no engines over Palma bay after a bird strike: gear up, flaps down, wings level and touch the water as slowly as possible, like on the Hudson.",
+  "El 747 en final a la pista 10 rozando a los bañistas de Maho Beach, sobre aguas turquesa del Caribe.": "The 747 on final to runway 10 skimming the sunbathers on Maho Beach, over turquoise Caribbean water.",
+  "Lukla, puerta del Everest": "Lukla, gateway to Everest", "Una pista de 527 m con un 12 % de pendiente al fondo de un valle del Himalaya, a 2 800 m y entre picos de seis mil.": "A 527 m runway with a 12 % slope at the bottom of a Himalayan valley, at 2,800 m and among six-thousand-metre peaks.",
+  "Hong Kong entre islas": "Hong Kong among the islands", "Sobre las islas y el estuario del río de las Perlas hacia Chek Lap Kok, con la ciudad y las montañas a la derecha.": "Over the islands and the Pearl River estuary towards Chek Lap Kok, with the city and mountains on the right.",
+  "Queenstown y los Remarkables": "Queenstown and the Remarkables", "Entre los Alpes del Sur de Nueva Zelanda, siguiendo el lago Wakatipu hasta uno de los aeropuertos más bonitos del mundo.": "Among the Southern Alps of New Zealand, following Lake Wakatipu to one of the most beautiful airports in the world.",
+  "Cruzando el Atlántico": "Crossing the Atlantic", "Desde Madeira rumbo al Caribe en un 787: el mundo entero es volable, con océano profundo, oleaje real y cualquier destino del mapa.": "From Madeira towards the Caribbean in a 787: the whole world is flyable, with deep ocean, real swell and any destination on the map.",
+  "Madrid de noche": "Madrid at night", "Las calles reales de Madrid iluminadas: la Castellana, la M-30 y las Cuatro Torres.": "The real streets of Madrid lit up: the Castellana, the M-30 and the Cuatro Torres.",
+  "Barcelona desde el mar": "Barcelona from the sea", "Entra por el Port Olímpic hacia el Eixample, la Sagrada Família y Montjuïc.": "Enter over the Port Olímpic towards the Eixample, the Sagrada Família and Montjuïc.",
+  "Valencia al atardecer": "Valencia at sunset", "El jardín del Turia hasta la Ciudad de las Artes y las Ciencias y el puerto.": "The Turia garden to the City of Arts and Sciences and the port.",
+  "Ciudad Real y su aeropuerto": "Ciudad Real and its airport", "De la pista de 4 km de Ciudad Real Central a la ciudad.": "From the 4 km runway of Ciudad Real Central to the city.",
+  "Rodea el volcán más alto de España (3 715 m) con el relieve real de Tenerife.": "Circle Spain's highest volcano (3,715 m) with Tenerife's real terrain.",
+  "Las cumbres del Pirineo hacia el Aneto, el pico más alto de la cordillera.": "The Pyrenean peaks towards the Aneto, the highest summit of the range.",
+  "El Mulhacén y el Veleta al atardecer, sobre la vega de Granada.": "The Mulhacén and the Veleta at sunset, over the Granada plain.",
+  "Picos de Europa": "Picos de Europa", "Macizos calizos verticales entre Asturias, León y Cantabria.": "Vertical limestone massifs between Asturias, León and Cantabria.",
+  "Serra de Tramuntana": "Serra de Tramuntana", "La costa norte de Mallorca, de Andratx a Formentor.": "The north coast of Mallorca, from Andratx to Formentor.",
+  "Amanecer en los Alpes": "Dawn in the Alps", "Acrobacias entre cumbres nevadas con la primera luz.": "Aerobatics among snowy peaks in the first light.",
+  "Vuela el valle del Khumbu hacia la pista de Lukla.": "Fly up the Khumbu valley towards the Lukla runway.",
+  "Las Vegas de noche": "Las Vegas at night", "Sobrevuela el Strip iluminado a baja altura.": "Fly low over the illuminated Strip.",
+  "Costa de Madeira": "Madeira coast", "Acantilados verdes y un océano azul profundo.": "Green cliffs and a deep blue ocean.",
+  "Bahía de Sídney": "Sydney Harbour", "Rumbo norte hacia el centro de Sídney.": "Heading north towards central Sydney.",
+  "Rascacielos de Dubái": "Dubai skyscrapers", "El atardecer sobre el desierto y la torre más alta del mundo.": "Sunset over the desert and the tallest tower in the world.",
+  "Cruza las cumbres de la isla hasta el océano.": "Cross the island's peaks down to the ocean.",
+  "Montañas de 5 000 m al amanecer desde Santiago.": "5,000 m mountains at dawn from Santiago.",
+  "Rascacielos iluminados junto al río Hudson.": "Illuminated skyscrapers beside the Hudson River.",
+  "Rocas rojas de Sedona": "Sedona red rocks", "Mesetas rojas y la pista sobre una meseta.": "Red mesas and the runway on top of a plateau.",
+  "Hong Kong al ocaso": "Hong Kong at dusk", "Islas montañosas y la ciudad vertical.": "Mountainous islands and the vertical city.",
+  "Lava, nieve y un mar gris.": "Lava, snow and a grey sea.", "Islandia nevada": "Snowy Iceland", "Manhattan nocturno": "Manhattan at night", "Los Andes": "The Andes", "El Teide": "Teide", "Sierra Nevada": "Sierra Nevada", "Pirineos": "Pyrenees", "Himalaya": "Himalayas",
+  "Récord": "Record", "¡Nuevo récord!": "New record!", "Mejor": "Best",
+  // ---- airports ----
+  "Aeropuerto": "Airport", "Pistas": "Runways", "Ciudad": "City", "Continente ": "Continent ",
+  "Norteamérica": "North America", "Sudamérica": "South America", "Oceanía": "Oceania", "Europa": "Europe", "África": "Africa", "Asia": "Asia", "Oriente Medio": "Middle East",
+  "Haz clic en el mapa para elegir uno.": "Click the map to choose one.",
+  // ---- hangar, log, settings, controls ----
+  "Hangar ": "Hangar ", "Todas ": "All ", "Horas de vuelo": "Flight hours", "Aterrizajes": "Landings", "Distancia": "Distance", "Duración": "Duration", "Resultado": "Result", "Fecha": "Date",
+  "Tus vuelos se guardan en este navegador.": "Your flights are saved in this browser.", "Aún no hay vuelos. Los vuelos de más de 20 segundos aparecerán aquí al terminar.": "No flights yet. Flights longer than 20 seconds will appear here when they end.",
+  "Borrar libro de vuelo": "Clear logbook", "¿Seguro? Pulsa de nuevo para borrar": "Sure? Press again to delete",
+  "Los cambios se aplican al momento y se recuerdan en este navegador.": "Changes apply immediately and are remembered in this browser.",
+  "Gráficos": "Graphics", "Calidad": "Quality", "Baja": "Low", "Media": "Medium", "Alta": "High", "Ultra": "Ultra", "Baja: sin sombras ni resplandor. Ultra: más distancia de visión, árboles y nubes.": "Low: no shadows or glare. Ultra: longer view distance, trees and clouds.",
+  "Pilotaje": "Flying", "Estabilidad automática": "Automatic stability", "Timón automático": "Automatic rudder", "Detección de accidentes": "Crash detection", "Consumo de combustible": "Fuel consumption", "Invertir cabeceo": "Invert pitch", "Pilotar con el ratón": "Fly with the mouse", "Sensibilidad": "Sensitivity",
+  "Sonido": "Sound", "Volumen": "Volume", "Avisos de altitud por voz": "Voice altitude callouts", "Idioma": "Language", "Tutorial de vuelo": "Flight tutorial", "Mostrar el tutorial al empezar a volar": "Show the tutorial when you start flying",
+  "Teclado, ratón y mando. Con un mando: stick izquierdo para pilotar, stick derecho para timón y potencia, A tren, B/X flaps, Y cámara, RB piloto automático, LB frenos, gatillos potencia.": "Keyboard, mouse and gamepad. With a gamepad: left stick to fly, right stick for rudder and power, A gear, B/X flaps, Y camera, RB autopilot, LB brakes, triggers power.",
+  "Cabeceo (morro arriba / abajo)": "Pitch (nose up / down)", "Alabeo": "Roll", "Timón (guiñada)": "Rudder (yaw)", "Potencia + / −": "Power + / −", "(Mayús = máx. / ralentí)": "(Shift = max / idle)", "R · F  (Mayús = máx. / ralentí)": "R · F  (Shift = max / idle)",
+  "Reversas": "Reverse thrust", "Mantén F con potencia al ralentí": "Hold F with power at idle", "Flaps recoger / extender": "Flaps retract / extend", "Tren de aterrizaje": "Landing gear", "Gancho de apontaje (portaaviones)": "Arresting hook (carrier)", "Frenos": "Brakes", "Espacio": "Space", "Freno de estacionamiento": "Parking brake",
+  "Luces de aterrizaje / estrobos": "Landing lights / strobes", "Humo (acrobáticos)": "Smoke (aerobatic)", "Piloto automático (U)": "Autopilot (U)", "U  (panel AP en la barra)": "U  (AP panel in the toolbar)", "(panel AP en la barra)": "(AP panel in the toolbar)", "Aerofrenos / armar spoilers": "Airbrakes / arm spoilers",
+  "Cámaras": "Cameras", "C  o  1 Cabina · 2 Persecución · 3 Exterior · 4 Torre · 5 Pasada · 6 Dron": "C  or  1 Cockpit · 2 Chase · 3 Exterior · 4 Tower · 5 Flyby · 6 Drone", "1 Cabina · 2 Persecución · 3 Exterior · 4 Torre · 5 Pasada · 6 Dron": "1 Cockpit · 2 Chase · 3 Exterior · 4 Tower · 5 Flyby · 6 Drone",
+  "Arrastrar con el ratón · rueda = zoom": "Drag with the mouse · wheel = zoom", "Pulsa 1 de nuevo para cambiar de vista · clic = pulsar/subir · clic derecho = bajar · rueda = ajustar (Mayús ×10) · arrastra palancas y compensador": "Press 1 again to change view · click = press/raise · right click = lower · wheel = adjust (Shift ×10) · drag levers and trim",
+  "Mapa (zoom: Local · Región · España)": "Map (zoom: Local · Region · Spain)", "M  ·  rueda del ratón": "M  ·  mouse wheel", "rueda del ratón": "mouse wheel",
+  "Acelerar / frenar el tiempo (×1 ×2 ×4 ×8, en vuelo)": "Speed up / slow down time (×1 ×2 ×4 ×8, in flight)", "Ir al destino (mundo abierto)": "Go to destination (open world)", "Elige destino en Vuelo libre y usa LNAV en el piloto automático": "Choose a destination in Free flight and use LNAV on the autopilot",
+  "Reiniciar vuelo": "Restart flight", "Pausa / menú": "Pause / menu", "Compensador (trim)": "Trim", "Mirar / orbitar": "Look / orbit", "Sonido ": "Sound ",
+  // ---- HUD, toolbar, popups ----
+  "Pausa (Esc)": "Pause (Esc)", "Cámara (C)": "Camera (C)", "Mapa (M)": "Map (M)", "Instrumentos (H)": "Instruments (H)", "Reiniciar (O)": "Restart (O)", "Pantalla completa": "Full screen", "Cerrar": "Close",
+  "TREN": "GEAR", "ABAJO": "DOWN", "ARRIBA": "UP", "FRENO": "BRAKE", "COMB": "FUEL", "POT": "PWR", "Panel de instrumentos": "Instrument panel", "Piloto automático": "Autopilot", "Panel del piloto automático": "Autopilot panel",
+  "Persecución": "Chase", "Cabina": "Cockpit", "Exterior": "Exterior", "Torre": "Tower", "Pasada": "Flyby", "Dron": "Drone", "Cámara:": "Camera:",
+  "HDG más": "HDG up", "HDG menos": "HDG down", "ALT más": "ALT up", "ALT menos": "ALT down", "V/S más": "V/S up", "V/S menos": "V/S down", "SPD más": "SPD up", "SPD menos": "SPD down",
+  "Volumen ": "Volume ",
+  "APR captura el localizador y la senda de 3° de la pista activa (": "APR captures the localizer and 3° glidepath of the active runway (",
+  // ---- pause and result screens ----
+  "Pausa": "Paused", "Volver al menú": "Back to menu", "Menú": "Menu", "Menú principal": "Main menu", "Continuar": "Resume", "Reiniciar": "Restart", "Repetir": "Retry", "Seguir rodando": "Keep rolling", "Seguir aquí": "Stay here", "Detener": "Stop",
+  "Accidente": "Crash", "Puedes desactivar la detección de accidentes en Ajustes.": "You can turn off crash detection in Settings.",
+  "El avión flota y los ocupantes evacuan sobre las alas y por los toboganes. Calificación:": "The aircraft floats and the occupants evacuate over the wings and down the slides. Rating:",
+  "Consejo: tren arriba, flaps abajo, alas niveladas, morro algo arriba y la menor velocidad posible, paralelo a las olas.": "Tip: gear up, flaps down, wings level, nose slightly up and the lowest speed possible, parallel to the waves.",
+  "Velocidad vertical": "Vertical speed", "Desvío del eje": "Centreline deviation", "Distancia al umbral": "Distance from threshold", "Factor de carga": "Load factor", "Velocidad sobre el agua": "Water speed", "Desaceleración máxima": "Peak deceleration", "Calificación": "Rating",
+  "Toma de contacto": "Touchdown", "Toma en cubierta": "Deck landing", "Aterrizaje": "Landing", "Amerizaje": "Ditching", "Fuera de pista": "Off the runway",
+  "Redondeo (en portaaviones se toma sin flare)": "Flare (on a carrier you land without a flare)", "Toma muy corta: peligro de rampa": "Touchdown very short: ramp strike danger", "Alas no niveladas": "Wings not level", "Actitud de amerizaje fuera de 1°–9°": "Ditching attitude outside 1°–9°", "Toma antes del umbral": "Touchdown before the threshold",
+  // ---- toasts: controls ----
+  "El paracaídas solo se despliega en tierra.": "The parachute only deploys on the ground.", "Paracaídas de frenado desplegado": "Brake parachute deployed", "Paracaídas soltado": "Parachute released",
+  "Este avión no tiene aerofrenos.": "This aircraft has no airbrakes.", "Este avión tiene tren fijo.": "This aircraft has fixed landing gear.", "El tren no se puede subir en tierra.": "The gear cannot be raised on the ground.",
+  "No bajes el tren planeando sobre el agua: capotarías.": "Don't lower the gear when gliding onto water: you would flip over.", "Piloto automático desconectado": "Autopilot disengaged", "Piloto automático conectado": "Autopilot engaged", "El piloto automático solo se conecta en vuelo.": "The autopilot only engages in flight.",
+  "Vuelo reiniciado": "Flight restarted", "La aceleración de tiempo solo funciona en vuelo.": "Time acceleration only works in flight.", "Tiempo real ×1": "Real time ×1", "Tiempo real ×1 (cerca del suelo)": "Real time ×1 (near the ground)",
+  "Cabina interactiva: clic = pulsar / subir, clic derecho = bajar, rueda = ajustar (Mayús ×10). Arrastra para mirar; 1 cambia de vista.": "Interactive cockpit: click = press / raise, right click = lower, wheel = adjust (Shift ×10). Drag to look around; 1 changes view.",
+  "Cabina interactiva: clic = pulsar / subir, clic derecho = bajar, rueda = ajustar (Mayús ×10). Arrastra para mirar; ": "Interactive cockpit: click = press / raise, right click = lower, wheel = adjust (Shift ×10). Drag to look around; ", " cambia de vista.": " changes view.",
+  "No hay portaaviones en esta zona.": "There is no aircraft carrier in this area.", "No hay agua cerca: empiezas en la pista.": "No water nearby: you start on the runway.", "¡Listo!": "Ready!",
+  "¡Fallo de ambos motores! Planea hacia el agua: tren arriba, flaps abajo, alas niveladas.": "Both engines failed! Glide towards the water: gear up, flaps down, wings level.",
+  "En la catapulta: potencia máxima (": "On the catapult: full power (", "Mayús": "Shift", ") para lanzar. Tras el lanzamiento, tren arriba (": ") to launch. After launch, gear up (", ") y suelta el freno (": ") and release the brake (", "¡Lanzado! Recoge el tren (G).": "Launched! Raise the gear (G).",
+  "Aproximación al portaaviones: senda de 3,5° hacia el cable 3. Gancho ": "Carrier approach: 3.5° glidepath to wire 3. Hook ", " (ya bajado), toma firme sin redondear y potencia al tocar por si no engancha.": " (already down), firm touchdown without flaring and full power on touchdown in case you don't catch a wire.",
+  "A flote: tren arriba en el agua. Potencia (": "Afloat: gear up on the water. Power (", "), morro ligeramente arriba para subir al redán y rota a ~45 kt.": "), nose slightly up to get onto the step and rotate at ~45 kt.",
+  "Freno de estacionamiento puesto. Pulsa ": "Parking brake set. Press ", " para soltarlo y ": " to release it and ", " para dar potencia.": " for power.",
+  "¡Sin gancho! Pulsa ": "No hook! Press ", " para bajarlo en la próxima.": " to lower it on the next one.", "¡Bolter, bolter! Ascienda y vuelva al circuito.": "Bolter, bolter! Climb and return to the pattern.",
+  "Enganchado en el cable ": "Caught wire ", ". Reduce potencia y sube el gancho con ": ". Reduce power and raise the hook with ", " para soltarte.": " to release.",
+  "¡Golpe de cola! Has levantado demasiado el morro.": "Tail strike! You raised the nose too much.",
+  // ---- toasts: systems and failures ----
+  "Batería agotada: sin generadores ni APU no hay electricidad.": "Battery depleted: with no generators or APU there is no electrical power.", "Sin electricidad: el piloto automático se desconecta.": "No electrical power: the autopilot disconnects.",
+  "Hidráulica desconectada: mandos duros, flaps bloqueados y tren solo por gravedad.": "Hydraulics off: stiff controls, flaps locked and gear by gravity only.", "Presión de combustible baja: conecta las bombas.": "Low fuel pressure: switch on the pumps.",
+  "Sin combustible: motores parados. Planea hasta una pista.": "Out of fuel: engines stopped. Glide to a runway.", "Hielo en las alas: conecta el antihielo.": "Ice on the wings: switch on anti-ice.",
+  "Pitot congelado: la velocidad indicada no es fiable. Conecta la calefacción del pitot.": "Pitot frozen: indicated airspeed is unreliable. Switch on pitot heat.", "Altitud de cabina excesiva: desciende o conecta los packs (máscaras de oxígeno).": "Cabin altitude too high: descend or switch on the packs (oxygen masks).",
+  "Calefacción del carburador": "Carburettor heat", "Marcador de rumbo": "Heading bug", "Ajuste altimétrico (rueda / clic izq./der.)": "Altimeter setting (wheel / left-right click)", "Código del transpondedor (rueda / clic izq./der.)": "Transponder code (wheel / left-right click)",
+  "Directo a (D→): elige con la rueda FMS y púlsala": "Direct to (D→): choose with the FMS wheel and press it", "Plan de vuelo activo": "Active flight plan", "ND: clic cambia el alcance": "ND: click changes the range", "Escalas ILS en el PFD": "ILS scales on the PFD", "Director de vuelo": "Flight director", "Brillo de pantallas": "Display brightness",
+  "Rueda FMS (gira: elegir · clic: ENT)": "FMS wheel (turn: choose · click: ENT)", "Pantalla de sistemas": "Systems display", "mostrada": "shown", "Altitud de crucero: ": "Cruise altitude: ", "NAV 1 en espera: ": "NAV 1 standby: ", "Entrada no válida: ": "Invalid entry: ",
+  "). Pulsa LNAV / NAV para volar directo.": "). Press LNAV / NAV to fly direct.", "). Pulsa NAV en el piloto automático para seguirlo.": "). Press NAV on the autopilot to follow it.",
+  // ---- crash causes ----
+  "Un ala se ha clavado en el agua y el avión ha dado una vuelta de campana.": "A wing dug into the water and the aircraft cartwheeled.", "El morro se ha hundido en el agua y el avión ha capotado.": "The nose dug into the water and the aircraft flipped over.", "Colisión con el portaaviones.": "Collision with the aircraft carrier.",
+  "Capotaje: has amerizado con el tren abajo.": "Flipped over: you ditched with the gear down.", "Amerizaje: el avión ha tocado el agua.": "Ditching: the aircraft hit the water.", "Aterrizaje con el tren recogido.": "Landing with the gear up.", "Colisión con el terreno.": "Collision with the terrain.",
+  "Daños estructurales por sobrevelocidad.": "Structural damage from overspeed.", "El morro se ha clavado en el agua.": "The nose dug into the water.", "La cola ha golpeado el agua y el fuselaje se ha partido.": "The tail hit the water and the fuselage broke apart.", "Capotaje: el tren abajo se ha clavado en el agua.": "Flipped over: the lowered gear dug into the water.",
+  "un edificio": "a building", "un árbol": "a tree", "un avión estacionado": "a parked aircraft", "una instalación del aeropuerto": "an airport facility", "un monumento": "a monument", "un estadio": "a stadium", "una planta solar": "a solar plant", "un aerogenerador": "a wind turbine", "una grúa del puerto": "a port crane", "un barco": "a ship", "otro avión": "another aircraft", "un puente": "a bridge", "un obstáculo": "an obstacle",
+  // ---- open world, loading ----
+  "Tiempo acelerado": "Time accelerated", "En ruta": "En route", "Zona de": "Area of", "Aterriza pronto.": "Land soon.",
+  "Portaaviones · Golfo de Cádiz": "Aircraft carrier · Gulf of Cádiz", "Portaaviones · bahía de Palma": "Aircraft carrier · Palma bay", "Ruta oceánica": "Oceanic route", "No se pudo cargar el relieve real; se usa un terreno generado.": "The real terrain could not be loaded; generated terrain is used.",
+  // ---- landmarks (shown in the map) ----
+  "Estatua de la Libertad": "Statue of Liberty", "Pirámides de Guiza": "Pyramids of Giza", "Pan de Azúcar": "Sugarloaf Mountain", "Bahía de Ha Long": "Ha Long Bay", "Karst de Yangshuo": "Yangshuo karst", "Torre del Diablo": "Devils Tower", "Ópera de Sídney": "Sydney Opera House", "Pudong (Shanghái)": "Pudong (Shanghai)", "City de Londres": "City of London", "Bankenviertel (Fráncfort)": "Bankenviertel (Frankfurt)", "Centro de Varsovia": "Warsaw city centre", "Porta Nuova (Milán)": "Porta Nuova (Milan)", "Kop van Zuid (Róterdam)": "Kop van Zuid (Rotterdam)",
+  "Basílica de San Pedro": "St Peter's Basilica", "Giralda y Catedral de Sevilla": "Giralda and Seville Cathedral", "Torre del Oro": "Torre del Oro", "Plaza de España de Sevilla": "Plaza de España, Seville", "Ciudad de las Artes y las Ciencias": "City of Arts and Sciences", "Acueducto de Segovia": "Aqueduct of Segovia", "Catedral y Alcázar de Segovia": "Segovia Cathedral and Alcázar", "Mezquita de Córdoba": "Mosque-Cathedral of Córdoba", "Catedral de Santiago": "Santiago Cathedral", "Torre de Hércules": "Tower of Hercules", "Torre de Pisa": "Leaning Tower of Pisa", "Arco del Triunfo": "Arc de Triomphe", "Notre-Dame de París": "Notre-Dame de Paris", "Kremlin de Moscú": "Moscow Kremlin", "Catedral de San Basilio": "Saint Basil's Cathedral", "Santa Sofía": "Hagia Sophia", "Toledo: Catedral y Alcázar": "Toledo: Cathedral and Alcázar", "Murallas de Ávila": "Walls of Ávila", "Catedral de Salamanca": "Salamanca Cathedral", "Catedral de Burgos": "Burgos Cathedral", "Catedral de Ciudad Real": "Ciudad Real Cathedral", "Iglesia de San Pedro (Ciudad Real)": "Church of San Pedro (Ciudad Real)", "Puerta de Toledo": "Puerta de Toledo", "Molinos de Campo de Criptana": "Windmills of Campo de Criptana", "Castillo y molinos de Consuegra": "Consuegra castle and windmills", "Plaza Mayor de Almagro": "Plaza Mayor, Almagro", "Bajo Manhattan": "Lower Manhattan", "Big Ben y Westminster": "Big Ben and Westminster",
+  // ---- place names with an English form ----
+  "Fráncfort": "Frankfurt", "Zúrich": "Zurich", "París": "Paris", "Sídney": "Sydney", "Dubái": "Dubai", "Dubái Internacional": "Dubai International", "Río de Janeiro": "Rio de Janeiro", "Ciudad de México": "Mexico City", "Los Ángeles": "Los Angeles", "Los Ángeles Internacional": "Los Angeles International", "Nueva York": "New York", "Londres": "London", "Ámsterdam": "Amsterdam", "Singapur": "Singapore", "Tokio": "Tokyo", "Roma": "Rome", "Atenas": "Athens", "Johannesburgo": "Johannesburg", "Reikiavik": "Reykjavik", "El Cairo": "Cairo", "El Cairo Internacional": "Cairo International", "Países Bajos": "Netherlands", "Japón": "Japan", "España": "Spain", "México": "Mexico", "Sudáfrica": "South Africa", "Caribe neerlandés": "Caribbean Netherlands", "Estambul": "Istanbul", "Pekín": "Beijing", "Moscú": "Moscow", "Lisboa": "Lisbon", "Viena": "Vienna", "Varsovia": "Warsaw", "Milán": "Milan", "Róterdam": "Rotterdam", "Altipuerto de Courchevel": "Courchevel altiport", "Tokio Haneda": "Tokyo Haneda", "Roma Fiumicino": "Rome Fiumicino", "Singapur Changi": "Singapore Changi", "Ámsterdam Schiphol": "Amsterdam Schiphol", "Atenas Eleftherios Venizelos": "Athens Eleftherios Venizelos", "Hong Kong Internacional": "Hong Kong International", "Denver Internacional": "Denver International", "San Francisco Internacional": "San Francisco International", "Pamplona": "Pamplona", "Johannesburgo ": "Johannesburg ",
+  // ---- misc ----
+  "Mayús+B": "Shift+B", "B · Mayús+B": "B · Shift+B", "Cámaras ": "Cameras ", "Imágenes: Landsat WELD · NASA GIBS": "Imagery: Landsat WELD · NASA GIBS", "Aterr.": "Land.", "Salida": "Departure", "Rumbo": "Heading", "Listo": "Ready", "Sí": "Yes", "Volumen  ": "Volume ", "Visibilidad ": "Visibility ", "Cerrar ": "Close ", "Espacio ": "Space ",
+});
+// numbered text and composite strings
+const _CITY = k => trText(k);
+I18N_RX.push(
+  [/^(\d+) aeropuertos reales con su disposición de pistas, luces de aproximación, PAPI y orografía generada a partir de su entorno\. Haz clic en el mapa para elegir uno\.$/, "$1 real airports with their runway layouts, approach lights, PAPI and terrain generated from their surroundings. Click the map to choose one."],
+  [/^(\d+) aviones con modelo 3D, aviónica y comportamiento propios\. Selecciona uno para verlo en la plataforma\.$/, "$1 aircraft with their own 3D model, avionics and behaviour. Select one to see it on the apron."],
+  [/^Generando terreno… (\d+)%$/, "Generating terrain… $1%"],
+  [/^Construyendo (.+)…$/, (m, a) => "Building " + trText(a) + "…"],
+  [/^Descargando el relieve real de (.+)…$/, (m, a) => "Downloading the real terrain of " + trText(a) + "…"],
+  [/^Calculando el relieve de (.+)…$/, (m, a) => "Computing the terrain of " + trText(a) + "…"],
+  [/^Descargando el relieve real de $/, "Downloading the real terrain of "], [/^Calculando el relieve de $/, "Computing the terrain of "],
+  [/^(\d+) pistas?$/, (m, n) => n + (n === '1' ? ' runway' : ' runways')],
+  [/^([A-Z0-9]{4}) · (.+) — (\d+) km$/, (m, i, c, k) => i + ' · ' + trText(c) + ' — ' + k + ' km'],
+  [/^(.+) a (\d+) mil ft$/, (m, a, n) => a + ' at ' + n + ',000 ft'],
+  [/^(.+): (\d+) metros$/, (m, a, n) => a + ': ' + n + ' metres'],
+  [/^Colisión con (.+)\.$/, (m, a) => 'Collision with ' + trText(a) + '.'],
+  [/^Has tocado (.+)\.$/, (m, a) => 'You hit ' + trText(a) + '.'],
+  [/^Combustible bajo: queda un (\d+) %\. Aterriza pronto\.$/, "Low fuel: $1 % left. Land soon."],
+  [/^Gancho de apontaje (abajo|arriba)$/, (m, a) => 'Arresting hook ' + (a === 'abajo' ? 'down' : 'up')],
+  [/^Freno de estacionamiento (puesto|quitado)$/, (m, a) => 'Parking brake ' + (a === 'puesto' ? 'set' : 'released')],
+  [/^Luces de aterrizaje (ON|OFF)$/, "Landing lights $1"], [/^Luces estroboscópicas (ON|OFF)$/, "Strobe lights $1"],
+  [/^Cámara: (.+)$/, (m, a) => 'Camera: ' + trText(a)], [/^Tiempo acelerado ×(\d+)$/, "Time accelerated ×$1"],
+  [/^Página de sistemas (.+)$/, "Systems page $1"],
+  [/^Aterrizaje demasiado duro: el tren se ha roto \((\d+) fpm\)\.$/, "Landing too hard: the landing gear broke ($1 fpm)."],
+  [/^Daños estructurales: factor de carga excesivo \(([\d.]+) G\)\.$/, "Structural damage: excessive load factor ($1 G)."],
+  [/^Amerizaje demasiado duro: el casco ha reventado \((\d+) fpm\)\.$/, "Ditching too hard: the hull burst ($1 fpm)."],
+  [/^Impacto contra el agua demasiado fuerte \((\d+) fpm\): el fuselaje se ha partido\.$/, "Water impact too strong ($1 fpm): the fuselage broke apart."],
+  [/^Velocidad excesiva al amerizar \((\d+) kt\): el avión se ha desintegrado\.$/, "Excessive speed when ditching ($1 kt): the aircraft disintegrated."],
+  [/^(.+), viento sobre cubierta (\d+) nudos, catapulta (\d+), listo para el lanzamiento\.$/, "$1, wind over deck $2 knots, catapult $3, ready for launch."],
+  [/^(.+), tres millas, llame la bola\. Viento sobre cubierta (\d+) nudos\. Gancho abajo\.$/, "$1, three miles, call the ball. Wind over deck $2 knots. Hook down."],
+  [/^(.+), (.+), agua libre, despegue a discreción\.$/, "$1, $2, water clear, take off at your discretion."],
+  [/^(.+), contacto radar\. Mantenga vuelo visual\.$/, "$1, radar contact. Maintain visual flight."],
+  [/^(.+), bienvenido a (.+)\. Abandone la pista por la próxima salida\.$/, (m, a, c) => a + ', welcome to ' + c + '. Vacate the runway at the next exit.'],
+  [/^(.+), contacte con control de salidas\. Buen vuelo\.$/, "$1, contact departure control. Have a good flight."],
+  [/^Mayday recibido, (.+)\. Salvamento marítimo en camino\.$/, "Mayday received, $1. Sea rescue on its way."],
+  [/^¡Has llegado a (.+)!(.*)$/, (m, a, b) => 'You have arrived at ' + trText(a) + '!' + b],
+  [/^viento (\d+)$/, "wind $1"],
+  [/^Madrid, España · Elevación (.+)$/, "Madrid, Spain · Elevation $1"],
+  [/^(.+), España$/, "$1, Spain"],
+  [/^Toma (de contacto|en cubierta): (\d+) fpm(.*)$/, (m, a, f, r) => (a === 'en cubierta' ? 'Deck landing' : 'Touchdown') + ': ' + f + ' fpm' + trText(r)],
+  [/^Seguro\?.*$/, "Sure?"],
+  // generic " · " list: translate every part
+  [/^(.+ · .+)$/, s => s.split(' · ').map(p => { const t = trText(p); return t; }).join(' · ')],
+);
+// ---- tutorial ----
+Object.assign(I18N, {
+  "Tutorial": "Tutorial", "Saltar": "Skip", "¡Tutorial completado!": "Tutorial complete!",
+  "Suelta el freno de estacionamiento: pulsa": "Release the parking brake: press", "Máxima potencia: mantén": "Full power: hold", "o pulsa": "or press",
+  "(o ↓). Mantén el rumbo con": "(or ↓). Keep your heading with", "¡Ya vuelas! Sube el tren de aterrizaje: pulsa": "You're flying! Raise the landing gear: press",
+  "Pilota con": "Fly with", "o con las flechas.": "or with the arrow keys.", "Potencia:": "Power:", "sube,": "increases,", "baja.": "decreases.",
+  "Cámara": "Camera", "piloto automático": "autopilot", "pausa": "pause", "¡Buen vuelo!": "Have a good flight!", "General": "General",
+});
+I18N_RX.push(
+  [/^Paso (\d+) de (\d+)$/, "Step $1 of $2"],
+  [/^A (\d+) kt tira suavemente de la palanca:$/, "At $1 kt pull back gently on the stick:"],
+  [/^Aterrizaje (.+)$/, "Landing $1"], [/^Reiniciado$/, "Restarted"],
+);
+Object.assign(I18N, {
+  "Mostrar FPS": "Show FPS", "TIEMPO": "TIME", "DEST": "DEST",
+  "· piloto automático": "· autopilot", "· pausa": "· pause", ". ¡Buen vuelo!": ". Have a good flight!",
+  "Triciclo, fijo": "Tricycle, fixed", "Triciclo": "Tricycle", ", fijo": ", fixed", "Tren fijo": "Fixed gear", "S · W  o  ↓ · ↑": "S · W  or  ↓ · ↑", "A · D  o  ← · →": "A · D  or  ← · →", "Completado": "Completed", "Bush": "Bush",
+});
+i18nReady();
 /* =========================================================================
    POST: scene + depth pass, volumetric clouds, colour grading, lens flare,
    procedural noise textures (3D cloud noise, 2D terrain detail)
@@ -21255,7 +21578,7 @@ function syncModel(dt) {
 
 /* ---------- start a flight ---------- */
 async function startFlight(cfg) {
-  initAudio();
+  performance.mark('ah-fly-start'); initAudio();
   GAME.state = 'loading'; $('#menu').classList.add('hide'); $('#hud').classList.add('hide'); $('#loading').classList.remove('hide'); setLoading(0, 'Cargando…'); await nextFrame();
   GAME.mode = cfg.mode || 'free'; GAME.ch = cfg.ch || null;
   ENV.time = cfg.time ?? ENV.time; ENV.windDir = cfg.wind ? cfg.wind[0] : ENV.windDir; ENV.windKt = cfg.wind ? cfg.wind[1] : ENV.windKt;
@@ -21290,6 +21613,7 @@ async function startFlight(cfg) {
   else if (cfg.type === 'rwy') { atc(`${CALLSIGN()}, ${wind}, pista ${e.id}, autorizado a despegar.`); toast('Freno de estacionamiento puesto. Pulsa <kbd>P</kbd> para soltarlo y <kbd>R</kbd> para dar potencia.', 'warn', 7000); }
   else if (cfg.type === 'final') atc(`${CALLSIGN()}, ${wind}, pista ${e.id}, autorizado a aterrizar.`);
   else atc(`${CALLSIGN()}, contacto radar. Mantenga vuelo visual.`);
+  tutStart(cfg); performance.mark('ah-fly-ready');
 }
 
 /* ---------- input ---------- */
@@ -21809,8 +22133,10 @@ function updateFlare(dt) {
 
 /* ---------- main loop ---------- */
 let lastT = performance.now(), sortT = 0, envFollowT = 0;
+const FPS = { v: 0, n: 0, t0: 0 };   // real frame rate, averaged over half a second (HUD strip)
 function frame(now) {
   requestAnimationFrame(frame);
+  FPS.n++; if (now - FPS.t0 >= 500) { FPS.v = FPS.t0 ? FPS.n * 1000 / (now - FPS.t0) : 0; FPS.n = 0; FPS.t0 = now; }
   let dt = Math.min((now - lastT) / 1000, 0.05); lastT = now;
   ATM.uTime.value += dt;
   readPad(); openWorldTick(dt);
@@ -21822,6 +22148,7 @@ function frame(now) {
     updateTrails(dt);
     instT -= dt; if (instT <= 0) { instT = 1 / 24; const nav = navInfo(); drawPFD(fm, nav); drawND(fm, nav, 1 / 24); drawEICAS(fm); SCREEN_TEX.pfd.needsUpdate = SCREEN_TEX.nd.needsUpdate = SCREEN_TEX.eicas.needsUpdate = true; updateStrip(nav); if (!$('#bigmap').classList.contains('hide')) drawBigMap(); }
     updateAudio(fm, GAME.cam === 'cockpit', camera.position.distanceTo(fm.pos), dt);
+    tutTick(dt);
     if (W.windsocks) { const wv = fm.wind; for (const ws of W.windsocks) { if (wv.lengthSq() > .01) ws.rotation.y = Math.atan2(wv.x, wv.z); ws.rotation.x = -clamp(.8 - wv.length() / 8, 0, .8); } }
   } else if (GAME.state === 'menu') { menuScene(dt); updateAudio(fm || { rpmFrac: 0, n1: 0, ias: 0 }, false, 1e9, dt); }
   if (W && GAME.state !== 'loading') {
@@ -22314,10 +22641,14 @@ function scrSet(el) {
     <label class="row" for="sens">Sensibilidad <b id="sensl">${S.sens.toFixed(1)}</b></label><input type="range" id="sens" min="0.4" max="1" step="0.1" value="${S.sens}"></div>
   <div class="col box"><h3>Sonido</h3>
     <label class="row" for="vol">Volumen <b id="voll">${Math.round(S.vol * 100)}%</b></label><input type="range" id="vol" min="0" max="1" step="0.05" value="${S.vol}">
-    ${tog('callo', 'Avisos de altitud por voz', S.callouts)}</div></div>`;
+    ${tog('callo', 'Avisos de altitud por voz', S.callouts)}</div>
+  <div class="col box"><h3>General</h3>
+    <label class="row" for="lsel">Idioma</label><select id="lsel"><option value="en" ${LANG === 'en' ? 'selected' : ''}>English</option><option value="es" ${LANG === 'es' ? 'selected' : ''}>Español</option></select>
+    ${tog('tut', 'Mostrar el tutorial al empezar a volar', S.tutorial)}${tog('fps', 'Mostrar FPS', S.showFps)}</div></div>`;
   $('#qsel', el).onchange = e => { S.quality = e.target.value; saveSettings(); applyQuality(); };
   const bind = (id, k) => $('#' + id, el).onchange = e => { S[k] = e.target.checked; saveSettings(); };
-  bind('stab', 'stab'); bind('arud', 'autoRudder'); bind('crash', 'crash'); bind('fuel', 'fuelSim'); bind('inv', 'invertPitch'); bind('myoke', 'mouseYoke'); bind('callo', 'callouts');
+  bind('stab', 'stab'); bind('arud', 'autoRudder'); bind('crash', 'crash'); bind('fuel', 'fuelSim'); bind('inv', 'invertPitch'); bind('myoke', 'mouseYoke'); bind('callo', 'callouts'); bind('tut', 'tutorial'); bind('fps', 'showFps');
+  $('#lsel', el).onchange = e => { S.lang = e.target.value; saveSettings(); location.reload(); };
   $('#sens', el).oninput = e => { S.sens = +e.target.value; $('#sensl', el).textContent = S.sens.toFixed(1); saveSettings(); };
   $('#vol', el).oninput = e => { S.vol = +e.target.value; $('#voll', el).textContent = Math.round(S.vol * 100) + '%'; saveSettings(); };
 }
@@ -22430,6 +22761,7 @@ function updateStrip(nav) {
   const di = typeof destInfo === 'function' ? destInfo() : null;
   if (di) rows.push(['DEST', `${di.a.icao} ${Math.round(di.d / NM)} NM · ${fmtEte(di.ete)}`]);
   if (OPEN.rate > 1) rows.push(['TIEMPO', '×' + OPEN.rate, true]);
+  if (S.showFps) rows.push(['FPS', String(Math.round(FPS.v)), FPS.v > 0 && FPS.v < 25]);
   $('#strip').innerHTML = rows.map(([k, v, w]) => `<span>${k}</span><b class="${w ? 'warn' : ''}">${v}</b>`).join('');
 }
 
@@ -22682,11 +23014,43 @@ async function boot() {
     requestAnimationFrame(t => { lastT = t; frame(t); });
     setLoading(1, 'Listo'); await nextFrame();
     $('#loading').classList.add('hide'); $('#menu').classList.remove('hide');
-    renderScreen('free');
+    renderScreen('free'); performance.mark('ah-menu-ready');
   } catch (err) {
     console.error(err); $('#loadtxt').textContent = 'No se pudo iniciar el simulador: ' + (err && err.message ? err.message : err) + '. Este juego necesita WebGL 2.';
   }
 }
 boot();
 window.__AH = { COLL, collSeg, collGather, DECK, deckPick, SCREENS, bmBiome, biomeAt, treeLine, surface, H, RIV, rivLoad, SHIPS, seaDepth, TRAF, CRUISE, WIND, PORTS, TEXLIB_U, TEX, get model() { return model; }, get scenePass() { return scenePass; }, ATM, CLOUD_U, IN, tick(dt) { lastT = performance.now() - dt * 1000; frame(performance.now()); }, get fm() { return fm; }, get W() { return W; }, get tiles() { return tiles; }, get DEM() { return DEM; }, OPEN, toLatLon: (x, z) => toLatLon(x, z).slice(), fromLatLon, teleportTo, nearestRealApt, gcKm, demBaseIdx, APT, setSimRate, apPress, DISCOVERY, toggleMap, MAPV, renderScreen, get cityGroup() { return cityGroup; }, get airportGroup() { return airportGroup; }, H, GAME, ENV, AP, CAM, camera, renderer, scene, startFlight, setCam, applyWeather, Q, S, surfaceAt, waterH, SEA, seaState, CARRIERS, AC, carrierGroup, flightLogic, controls, syncModel, setAircraft, MENU_CAM, THREE, get water() { return water; }, SYS, SATM, TERR_U, STADIA, LMK, worldArid };
+
+/* ---------- tutorial: a ~30 s guided take-off (or the first manoeuvres when the flight starts in the air) ---------- */
+const TUT = { on: false, i: 0, t: 0, hold: 0, steps: [], el: null };
+function tutStart(cfg) {
+  tutStop(false); if (!S.tutorial || GAME.mode !== 'free' || !fm) return;
+  const kb = k => `<kbd>${k}</kbd>`, rwy = cfg.type === 'rwy', steps = [];
+  if (rwy) {
+    steps.push({ html: `Suelta el freno de estacionamiento: pulsa ${kb('P')}.`, done: () => !fm.parking });
+    steps.push({ html: `Máxima potencia: mantén ${kb('R')} o pulsa ${kb('Mayús')}+${kb('R')}.`, done: () => fm.thr > .9 });
+    steps.push({ html: `A ${Math.round(fm.spec.vr || fm.spec.vs * 1.2)} kt tira suavemente de la palanca: ${kb('S')} (o ↓). Mantén el rumbo con ${kb('Q')} / ${kb('E')}.`, done: () => !fm.onGround && fm.aglRaw > fm.P.gH + 4, max: 40 });
+    if (fm.spec.gear && fm.spec.gear.retract) steps.push({ html: `¡Ya vuelas! Sube el tren de aterrizaje: pulsa ${kb('G')}.`, done: () => !fm.gearDown });
+    $$('#toasts .toast.warn').forEach(t => t.remove());
+  } else {
+    steps.push({ html: `Pilota con ${kb('W')} ${kb('A')} ${kb('S')} ${kb('D')} o con las flechas.`, done: () => ['KeyW', 'KeyA', 'KeyS', 'KeyD', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].some(k => IN.keys[k]) });
+    steps.push({ html: `Potencia: ${kb('R')} sube, ${kb('F')} baja.`, init: st => st.thr0 = fm.thr, done: st => Math.abs(fm.thr - st.thr0) > .15 });
+  }
+  steps.push({ html: `Cámara ${kb('C')} · piloto automático ${kb('U')} · pausa ${kb('Esc')}. ¡Buen vuelo!`, auto: 6 });
+  Object.assign(TUT, { on: true, i: -1, steps }); const el = TUT.el = document.createElement('div'); el.id = 'tut'; el.className = 'glass'; $('#hud').appendChild(el); tutNext();
+}
+function tutNext() {
+  TUT.i++; TUT.t = 0; TUT.hold = 0;
+  if (TUT.i >= TUT.steps.length) { S.tutorial = false; saveSettings(); TUT.on = false; const e = TUT.el; if (e) { e.innerHTML = '<div class="tt"><b>Tutorial</b></div><div class="tb">¡Tutorial completado!</div>'; setTimeout(() => e.remove(), 2500); } return; }
+  const st = TUT.steps[TUT.i], n = TUT.steps.length; if (st.init) st.init(st);
+  TUT.el.innerHTML = `<div class="tt"><b>Tutorial</b><span>Paso ${TUT.i + 1} de ${n}</span><button id="tutx">Saltar</button></div><div class="tb">${st.html}</div><div class="tp"><i style="width:${TUT.i / n * 100}%"></i></div>`;
+  $('#tutx', TUT.el).onclick = () => tutStop(true);
+}
+function tutStop(skipped) { if (TUT.el) TUT.el.remove(); TUT.el = null; TUT.on = false; if (skipped) { S.tutorial = false; saveSettings(); } }
+function tutTick(dt) {
+  if (!TUT.on || GAME.paused || GAME.state !== 'fly') return;
+  const st = TUT.steps[TUT.i]; TUT.t += dt; TUT.hold = st.done && st.done(st) ? TUT.hold + dt : 0;
+  if (TUT.hold > 0.7 || (st.auto && TUT.t > st.auto) || TUT.t > (st.max || 16)) tutNext();
+}
 </script>

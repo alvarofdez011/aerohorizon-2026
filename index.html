@@ -305,7 +305,7 @@ const QUALITY = {
   alta:  { pr: 1.5,  shadow: 2048, bloom: true,  rings: [1, 2, 4], res: [128, 64, 28], trees: 24000, treeD: 1, bldD: 1, sat: 2048,  city: 1,   clouds: 1, vol: { steps: 60, scale: .5 }, detail: true, ao: .85, rays: 1 },
   ultra: { pr: 2,    shadow: 4096, bloom: true,  rings: [1, 3, 5], res: [176, 80, 32], trees: 45000, treeD: 2, bldD: 1, sat: 4096, city: 1.3, clouds: 1.3, vol: { steps: 90, scale: .6 }, detail: true, ao: 1, rays: 1.15 },
 };
-const DEFAULTS = { lang: 'en', tutorial: true, showFps: true, quality: 'alta', invertPitch: false, sens: 1, mouseYoke: false, stab: true, autoRudder: true, crash: true, fuelSim: true, units: 'aero', vol: 0.8, callouts: true, panel: true, aircraft: 'c172', airport: 'LEMD' };
+const DEFAULTS = { lang: 'en', tutorial: true, showFps: true, autoQ: true, quality: 'alta', invertPitch: false, sens: 1, mouseYoke: false, stab: true, autoRudder: true, crash: true, fuelSim: true, units: 'aero', vol: 0.8, callouts: true, panel: true, aircraft: 'c172', airport: 'LEMD' };
 const S = (() => { try { return Object.assign({}, DEFAULTS, JSON.parse(localStorage.getItem('ah26.settings') || '{}')); } catch (e) { return Object.assign({}, DEFAULTS); } })();
 function saveSettings() { try { localStorage.setItem('ah26.settings', JSON.stringify(S)); } catch (e) {} }
 function loadJSON(k, d) { try { return JSON.parse(localStorage.getItem(k)) ?? d; } catch (e) { return d; } }
@@ -810,6 +810,15 @@ Object.assign(I18N, {
   "· piloto automático": "· autopilot", "· pausa": "· pause", ". ¡Buen vuelo!": ". Have a good flight!",
   "Triciclo, fijo": "Tricycle, fixed", "Triciclo": "Tricycle", ", fijo": ", fixed", "Tren fijo": "Fixed gear", "S · W  o  ↓ · ↑": "S · W  or  ↓ · ↑", "A · D  o  ← · →": "A · D  or  ← · →", "Completado": "Completed", "Bush": "Bush",
 });
+// ATC (the tower name and the clearances)
+const _wind = s => s.replace(/viento (\d+) grados, (\d+) nudos/, 'wind $1 degrees, $2 knots');
+I18N_RX.unshift(
+  [/^TORRE (.+) · ATC$/, "$1 TOWER · ATC"],
+  [/^(.+), (viento \d+ grados, \d+ nudos), pista (\S+), autorizado a (despegar|aterrizar)\.$/, (m, c, w, r, a) => c + ', ' + _wind(w) + ', runway ' + r + ', cleared for ' + (a === 'despegar' ? 'take-off' : 'landing') + '.'],
+  [/^(.+), (viento \d+ grados, \d+ nudos), agua libre, despegue a discreción\.$/, (m, c, w) => c + ', ' + _wind(w) + ', water clear, take off at your discretion.'],
+);
+Object.assign(I18N, { "Calidad automática": "Automatic quality" });
+I18N_RX.unshift([/^Calidad reducida a (\w+) para que el vuelo vaya más fluido\. Puedes cambiarla en Ajustes\.$/, (m, q) => 'Quality lowered to ' + ({ baja: 'Low', media: 'Medium', alta: 'High' }[q] || q) + ' for a smoother flight. You can change it in Settings.']);
 i18nReady();
 /* =========================================================================
    POST: scene + depth pass, volumetric clouds, colour grading, lens flare,
@@ -22148,7 +22157,7 @@ function frame(now) {
     updateTrails(dt);
     instT -= dt; if (instT <= 0) { instT = 1 / 24; const nav = navInfo(); drawPFD(fm, nav); drawND(fm, nav, 1 / 24); drawEICAS(fm); SCREEN_TEX.pfd.needsUpdate = SCREEN_TEX.nd.needsUpdate = SCREEN_TEX.eicas.needsUpdate = true; updateStrip(nav); if (!$('#bigmap').classList.contains('hide')) drawBigMap(); }
     updateAudio(fm, GAME.cam === 'cockpit', camera.position.distanceTo(fm.pos), dt);
-    tutTick(dt);
+    tutTick(dt); autoQualityTick(dt);
     if (W.windsocks) { const wv = fm.wind; for (const ws of W.windsocks) { if (wv.lengthSq() > .01) ws.rotation.y = Math.atan2(wv.x, wv.z); ws.rotation.x = -clamp(.8 - wv.length() / 8, 0, .8); } }
   } else if (GAME.state === 'menu') { menuScene(dt); updateAudio(fm || { rpmFrac: 0, n1: 0, ias: 0 }, false, 1e9, dt); }
   if (W && GAME.state !== 'loading') {
@@ -22635,7 +22644,7 @@ function scrSet(el) {
   el.innerHTML = `<div><h2>Ajustes</h2><p>Los cambios se aplican al momento y se recuerdan en este navegador.</p></div>
   <div class="cols"><div class="col box"><h3>Gráficos</h3>
     <label class="row" for="qsel">Calidad</label><select id="qsel">${Object.keys(QUALITY).map(k => `<option value="${k}" ${S.quality === k ? 'selected' : ''}>${k[0].toUpperCase() + k.slice(1)}</option>`).join('')}</select>
-    <p style="font-size:12px">Baja: sin sombras ni resplandor. Ultra: más distancia de visión, árboles y nubes.</p></div>
+    <p style="font-size:12px">Baja: sin sombras ni resplandor. Ultra: más distancia de visión, árboles y nubes.</p>${tog('autoq', 'Calidad automática', S.autoQ)}</div>
   <div class="col box"><h3>Pilotaje</h3>
     ${tog('stab', 'Estabilidad automática', S.stab)}${tog('arud', 'Timón automático', S.autoRudder)}${tog('crash', 'Detección de accidentes', S.crash)}${tog('fuel', 'Consumo de combustible', S.fuelSim)}${tog('inv', 'Invertir cabeceo', S.invertPitch)}${tog('myoke', 'Pilotar con el ratón', S.mouseYoke)}
     <label class="row" for="sens">Sensibilidad <b id="sensl">${S.sens.toFixed(1)}</b></label><input type="range" id="sens" min="0.4" max="1" step="0.1" value="${S.sens}"></div>
@@ -22647,7 +22656,7 @@ function scrSet(el) {
     ${tog('tut', 'Mostrar el tutorial al empezar a volar', S.tutorial)}${tog('fps', 'Mostrar FPS', S.showFps)}</div></div>`;
   $('#qsel', el).onchange = e => { S.quality = e.target.value; saveSettings(); applyQuality(); };
   const bind = (id, k) => $('#' + id, el).onchange = e => { S[k] = e.target.checked; saveSettings(); };
-  bind('stab', 'stab'); bind('arud', 'autoRudder'); bind('crash', 'crash'); bind('fuel', 'fuelSim'); bind('inv', 'invertPitch'); bind('myoke', 'mouseYoke'); bind('callo', 'callouts'); bind('tut', 'tutorial'); bind('fps', 'showFps');
+  bind('stab', 'stab'); bind('arud', 'autoRudder'); bind('crash', 'crash'); bind('fuel', 'fuelSim'); bind('inv', 'invertPitch'); bind('myoke', 'mouseYoke'); bind('callo', 'callouts'); bind('tut', 'tutorial'); bind('fps', 'showFps'); bind('autoq', 'autoQ');
   $('#lsel', el).onchange = e => { S.lang = e.target.value; saveSettings(); location.reload(); };
   $('#sens', el).oninput = e => { S.sens = +e.target.value; $('#sensl', el).textContent = S.sens.toFixed(1); saveSettings(); };
   $('#vol', el).oninput = e => { S.vol = +e.target.value; $('#voll', el).textContent = Math.round(S.vol * 100) + '%'; saveSettings(); };
@@ -23025,12 +23034,12 @@ window.__AH = { COLL, collSeg, collGather, DECK, deckPick, SCREENS, bmBiome, bio
 /* ---------- tutorial: a ~30 s guided take-off (or the first manoeuvres when the flight starts in the air) ---------- */
 const TUT = { on: false, i: 0, t: 0, hold: 0, steps: [], el: null };
 function tutStart(cfg) {
-  tutStop(false); if (!S.tutorial || GAME.mode !== 'free' || !fm) return;
+  AUTOQ.t = 0; AUTOQ.low = 0; tutStop(false); if (!S.tutorial || GAME.mode !== 'free' || !fm) return;
   const kb = k => `<kbd>${k}</kbd>`, rwy = cfg.type === 'rwy', steps = [];
   if (rwy) {
     steps.push({ html: `Suelta el freno de estacionamiento: pulsa ${kb('P')}.`, done: () => !fm.parking });
     steps.push({ html: `Máxima potencia: mantén ${kb('R')} o pulsa ${kb('Mayús')}+${kb('R')}.`, done: () => fm.thr > .9 });
-    steps.push({ html: `A ${Math.round(fm.spec.vr || fm.spec.vs * 1.2)} kt tira suavemente de la palanca: ${kb('S')} (o ↓). Mantén el rumbo con ${kb('Q')} / ${kb('E')}.`, done: () => !fm.onGround && fm.aglRaw > fm.P.gH + 4, max: 40 });
+    steps.push({ html: `A ${Math.round(fm.spec.vr || fm.spec.vs * 1.2)} kt tira suavemente de la palanca: ${kb('S')} (o ↓). Mantén el rumbo con ${kb('Q')} / ${kb('E')}.`, done: () => !fm.onGround && fm.aglRaw > fm.P.gH + 4 });
     if (fm.spec.gear && fm.spec.gear.retract) steps.push({ html: `¡Ya vuelas! Sube el tren de aterrizaje: pulsa ${kb('G')}.`, done: () => !fm.gearDown });
     $$('#toasts .toast.warn').forEach(t => t.remove());
   } else {
@@ -23051,6 +23060,20 @@ function tutStop(skipped) { if (TUT.el) TUT.el.remove(); TUT.el = null; TUT.on =
 function tutTick(dt) {
   if (!TUT.on || GAME.paused || GAME.state !== 'fly') return;
   const st = TUT.steps[TUT.i]; TUT.t += dt; TUT.hold = st.done && st.done(st) ? TUT.hold + dt : 0;
-  if (TUT.hold > 0.7 || (st.auto && TUT.t > st.auto) || TUT.t > (st.max || 16)) tutNext();
+  if (TUT.hold > 0.7 || (st.auto && TUT.t > st.auto)) tutNext();   // action steps wait for the player (Skip ends the tutorial)
+}
+
+/* ---------- automatic quality: if the flight runs under 24 fps for a few seconds, drop one quality level (Settings → Automatic quality) ---------- */
+const AUTOQ = { t: 0, low: 0, cool: 0 };
+function autoQualityTick(dt) {
+  if (!S.autoQ || document.hidden || GAME.paused || GAME.state !== 'fly') { AUTOQ.low = 0; return; }
+  AUTOQ.t += dt; AUTOQ.cool -= dt;
+  if (AUTOQ.t < 5 || AUTOQ.cool > 0 || !FPS.v) return;
+  AUTOQ.low = FPS.v < 24 ? AUTOQ.low + dt : 0;
+  if (AUTOQ.low < 2.5) return;
+  const order = ['ultra', 'alta', 'media', 'baja'], i = order.indexOf(S.quality);
+  if (i < 0 || i >= order.length - 1) return;
+  S.quality = order[i + 1]; saveSettings(); applyQuality(); AUTOQ.low = 0; AUTOQ.cool = 6;
+  toast('Calidad reducida a ' + S.quality + ' para que el vuelo vaya más fluido. Puedes cambiarla en Ajustes.', '', 5000);
 }
 </script>
